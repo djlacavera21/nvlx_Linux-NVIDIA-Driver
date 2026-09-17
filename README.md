@@ -1,27 +1,19 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.1
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7 adds `Grpc-Status-Details-Bin` Connection-nomination containment to the live HTTP surface. After inherited ingress, tracing, proxy-metadata, overload-header, Referer, User-Agent, original-method, peer-metadata, authorization-body, OAuth context, gRPC-timeout, retry-provenance, message-encoding, compression-negotiation, message-type, content-type, status, and status-message gates succeed, the server rejects an exact `grpc-status-details-bin` Connection option before endpoint/runtime evaluation while continuing to admit ordinary `Grpc-Status-Details-Bin` fields.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.1 adds `Grpc-Retry-Pushback-Ms` Connection-nomination containment to the live HTTP surface after the inherited Grpc-Status-Details-Bin gate.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
 
-## v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7 Grpc-Status-Details-Bin Connection-nomination containment
+## v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.1 Grpc-Retry-Pushback-Ms Connection-nomination containment
 
-- **Ordinary structured status-detail metadata remains admissible.** `Grpc-Status-Details-Bin` is accepted when all inherited gates accept the request.
-- **Hop-by-hop demotion is terminal.** Exact `grpc-status-details-bin` Connection nomination receives canonical `400 Request Rejected` framing.
-- **Matching is case-insensitive.** Mixed-case exact nominations are rejected.
-- **Substring lookalikes remain outside this rule.** `grpc-status-details-bin-x` remains valid when otherwise admissible.
-- **Values remain opaque at this layer.** The containment examines only Connection option names and does not validate, decode, normalize, or reinterpret the Base64-encoded status details.
-- **gRPC structured-status semantics remain external.** The gRPC HTTP/2 protocol defines `grpc-status-details-bin` as optional Base64-encoded error details following `grpc-message` in response trailers. nvlx only prevents exact request-side hop-by-hop nomination and does not duplicate response-trailer, Base64, or RPC status-consistency policy.
-- **HTTP/1.0 and HTTP/1.1 are covered.**
-- **Earlier gates retain precedence.** The complete inherited framing, credential, forwarding/client-address, Envoy timeout/retry/hedging, retriable-header/status, alt-stat, timeout-alt-response, timeout-retry-provenance, original-host, upstream-stream-duration, downstream-service-cluster/node, force-trace, IP-tags, XFCC, request-ID, client-trace-ID, OT-span-context, B3 trace-ID, B3 span-ID, B3 parent-span-ID, B3 sampled, B3 flags, compressed B3, Datadog trace-ID, Datadog parent-ID, Datadog sampling-priority, SW8, AWS X-Ray, Traceparent, Tracestate, X-Envoy-Local-Overloaded, Referer, User-Agent, X-Envoy-Original-Method, X-Envoy-Peer-Metadata, X-Envoy-Peer-Metadata-ID, X-Envoy-Auth-Partial-Body, X-Envoy-OAuth-Status, X-Envoy-OAuth-Failure-Reason, Grpc-Timeout, Grpc-Previous-Rpc-Attempts, Grpc-Encoding, Grpc-Accept-Encoding, Grpc-Message-Type, Content-Type, Grpc-Status, and Grpc-Message gates run before this layer.
-- **Expect handling remains canonical.** Requests carrying `Expect` still terminate through the inherited `417 Request Rejected` path with no interim `100 Continue`.
-- **HEAD rejection remains bodyless.** Representation `Content-Length` is preserved without sending the rejection body.
-- **Pipeline and runtime isolation remain intact.** Rejected requests cannot dispatch trailing pipelined bytes or invoke readiness/metrics evaluation.
-- **Admission capacity recovers normally.** Rejection releases its bounded worker slot.
-- **Ingress budgets are unchanged.** 8 KiB request line, 32 KiB aggregate headers, 32 fields, 5-second idle timeout, 5-second absolute header deadline, 32 concurrent requests.
-- **The live operator now uses `http_v16666666663311234567567851234456567`.** The live runtime remains `runtime_v1664`.
-- **Checkpoint persistence, Prometheus schema, RBAC, readiness policy, and NVIDIA mutation behavior are unchanged.**
+- Exact `grpc-retry-pushback-ms` Connection options are rejected case-insensitively with terminal `400 Request Rejected` before runtime evaluation.
+- Ordinary `Grpc-Retry-Pushback-Ms` fields and substring lookalikes remain admissible. Values remain opaque, including negative and nonnumeric values.
+- The [gRPC retry design](https://github.com/grpc/proposal/blob/master/A6-client-retries.md#pushback) defines this metadata for server pushback. Retry timing and value interpretation remain the responsibility of gRPC peers.
+- Grpc-Status-Details-Bin and all earlier gates retain precedence, including canonical `417` rejection for `Expect`.
+- HEAD rejection remains bodyless; pipeline termination, runtime isolation, and worker capacity recovery are preserved.
+- Ingress budgets remain 8 KiB request lines, 32 KiB headers, 32 fields, 5-second idle timeout and absolute header deadline, and 32 concurrent requests.
+- The live operator uses `http_v166666666633112345675678512344565671` with `runtime_v1664`. Checkpoint persistence, metrics, RBAC, readiness policy, and NVIDIA read-only behavior are preserved.
 
 ## Ingress resource model
 
@@ -32,7 +24,7 @@
 5. `max_request_header_bytes` — default 32768 bytes.
 6. `max_request_header_fields` — default 32 fields.
 
-Protocol invariants remain fail-closed in the inherited order: request framing and target syntax; header grammar and value-octet containment; `Expect`; upgrade/Trailer/TE/Proxy-Connection; canonical Connection parsing/lifecycle/critical nomination/duplication/singleton enforcement; Keep-Alive/HTTP2-Settings/WebSocket/Proxy-Authorization; Authorization/Cookie/Forwarded and forwarding/client-IP nomination containment; Envoy external/original/internal/attempt/decorator/timeout metadata; `X-Envoy-Retry-On`; `X-Envoy-Retry-Grpc-On`; `X-Envoy-Max-Retries`; `X-Envoy-Hedge-On-Per-Try-Timeout`; `X-Envoy-Retriable-Header-Names`; `X-Envoy-Retriable-Status-Codes`; `X-Envoy-Upstream-Alt-Stat-Name`; `X-Envoy-Upstream-Rq-Timeout-Alt-Response`; `X-Envoy-Is-Timeout-Retry`; `X-Envoy-Original-Host`; `X-Envoy-Upstream-Stream-Duration-Ms`; `X-Envoy-Downstream-Service-Cluster`; `X-Envoy-Downstream-Service-Node`; `X-Envoy-Force-Trace`; `X-Envoy-IP-Tags`; `X-Forwarded-Client-Cert`; `X-Request-ID`; `X-Client-Trace-ID`; `X-OT-Span-Context`; `X-B3-TraceId`; `X-B3-SpanId`; `X-B3-ParentSpanId`; `X-B3-Sampled`; `X-B3-Flags`; `B3`; `X-Datadog-Trace-ID`; `X-Datadog-Parent-ID`; `X-Datadog-Sampling-Priority`; `SW8`; `X-Amzn-Trace-Id`; `Traceparent`; `Tracestate`; `X-Envoy-Local-Overloaded`; `Referer`; `User-Agent`; `X-Envoy-Original-Method`; `X-Envoy-Peer-Metadata`; `X-Envoy-Peer-Metadata-ID`; `X-Envoy-Auth-Partial-Body`; `X-Envoy-OAuth-Status`; `X-Envoy-OAuth-Failure-Reason`; `Grpc-Timeout`; `Grpc-Previous-Rpc-Attempts`; `Grpc-Encoding`; `Grpc-Accept-Encoding`; `Grpc-Message-Type`; `Content-Type`; `Grpc-Status`; `Grpc-Message`; then `Grpc-Status-Details-Bin`.
+Protocol invariants remain fail-closed in the inherited order: request framing and target syntax; header grammar and value-octet containment; `Expect`; upgrade/Trailer/TE/Proxy-Connection; canonical Connection parsing/lifecycle/critical nomination/duplication/singleton enforcement; Keep-Alive/HTTP2-Settings/WebSocket/Proxy-Authorization; Authorization/Cookie/Forwarded and forwarding/client-IP nomination containment; Envoy external/original/internal/attempt/decorator/timeout metadata; `X-Envoy-Retry-On`; `X-Envoy-Retry-Grpc-On`; `X-Envoy-Max-Retries`; `X-Envoy-Hedge-On-Per-Try-Timeout`; `X-Envoy-Retriable-Header-Names`; `X-Envoy-Retriable-Status-Codes`; `X-Envoy-Upstream-Alt-Stat-Name`; `X-Envoy-Upstream-Rq-Timeout-Alt-Response`; `X-Envoy-Is-Timeout-Retry`; `X-Envoy-Original-Host`; `X-Envoy-Upstream-Stream-Duration-Ms`; `X-Envoy-Downstream-Service-Cluster`; `X-Envoy-Downstream-Service-Node`; `X-Envoy-Force-Trace`; `X-Envoy-IP-Tags`; `X-Forwarded-Client-Cert`; `X-Request-ID`; `X-Client-Trace-ID`; `X-OT-Span-Context`; `X-B3-TraceId`; `X-B3-SpanId`; `X-B3-ParentSpanId`; `X-B3-Sampled`; `X-B3-Flags`; `B3`; `X-Datadog-Trace-ID`; `X-Datadog-Parent-ID`; `X-Datadog-Sampling-Priority`; `SW8`; `X-Amzn-Trace-Id`; `Traceparent`; `Tracestate`; `X-Envoy-Local-Overloaded`; `Referer`; `User-Agent`; `X-Envoy-Original-Method`; `X-Envoy-Peer-Metadata`; `X-Envoy-Peer-Metadata-ID`; `X-Envoy-Auth-Partial-Body`; `X-Envoy-OAuth-Status`; `X-Envoy-OAuth-Failure-Reason`; `Grpc-Timeout`; `Grpc-Previous-Rpc-Attempts`; `Grpc-Encoding`; `Grpc-Accept-Encoding`; `Grpc-Message-Type`; `Content-Type`; `Grpc-Status`; `Grpc-Message`; `Grpc-Status-Details-Bin`; then `Grpc-Retry-Pushback-Ms`.
 
 ## Safety invariants
 
@@ -143,11 +135,12 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 105. Exact `grpc-status` nomination is rejected; ordinary `Grpc-Status` remains admissible when otherwise valid.
 106. Exact `grpc-message` nomination is rejected; ordinary `Grpc-Message` remains admissible when otherwise valid.
 107. Exact `grpc-status-details-bin` nomination is rejected; ordinary `Grpc-Status-Details-Bin` remains admissible when otherwise valid.
-108. HEAD rejection remains bodyless while preserving representation `Content-Length`.
-109. Rejected requests cannot process trailing pipelined bytes on the same connection.
-110. Rejection releases bounded worker capacity.
-111. Header field-count, aggregate header bytes, and request-line byte budgets remain independently enforced.
-112. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
-113. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
-114. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-115. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.
+108. Exact `grpc-retry-pushback-ms` nomination is rejected; ordinary `Grpc-Retry-Pushback-Ms` remains admissible when otherwise valid.
+109. HEAD rejection remains bodyless while preserving representation `Content-Length`.
+110. Rejected requests cannot process trailing pipelined bytes on the same connection.
+111. Rejection releases bounded worker capacity.
+112. Header field-count, aggregate header bytes, and request-line byte budgets remain independently enforced.
+113. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
+114. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
+115. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
+116. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.1.
