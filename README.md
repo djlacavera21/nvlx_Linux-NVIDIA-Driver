@@ -1,19 +1,19 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.3
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.3 adds `Grpc-Tags-Bin` Connection-nomination containment to the live HTTP surface after the inherited Grpc-Trace-Bin gate.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4 adds `Baggage` Connection-nomination containment to the live HTTP surface after the inherited Grpc-Tags-Bin gate.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
 
-## v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.3 Grpc-Tags-Bin Connection-nomination containment
+## v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4 Baggage Connection-nomination containment
 
-- Exact `grpc-tags-bin` Connection options are rejected case-insensitively with terminal `400 Request Rejected` before runtime evaluation.
-- Ordinary `Grpc-Tags-Bin` fields and substring lookalikes remain admissible. Values remain opaque, including empty and non-Base64 values permitted by inherited HTTP grammar.
-- [gRPC Java CensusStatsModule](https://github.com/grpc/grpc-java/blob/master/census/src/main/java/io/grpc/census/CensusStatsModule.java) uses this metadata for serialized tag context. Tag parsing and propagation remain external to this HTTP containment layer.
-- Grpc-Trace-Bin and all earlier gates retain precedence, including canonical `417` rejection for `Expect`.
+- Exact `baggage` Connection options are rejected case-insensitively with terminal `400 Request Rejected` before runtime evaluation.
+- Ordinary `Baggage` fields and substring lookalikes remain admissible. Values remain opaque, including empty and uninterpreted values permitted by inherited HTTP grammar.
+- [W3C Baggage](https://www.w3.org/TR/baggage/) defines application context propagation through this field. Baggage parsing and propagation remain external to this HTTP containment layer.
+- Grpc-Tags-Bin and all earlier gates retain precedence, including canonical `417` rejection for `Expect`.
 - HEAD rejection remains bodyless; pipeline termination, runtime isolation, and worker capacity recovery are preserved.
 - Ingress budgets remain 8 KiB request lines, 32 KiB headers, 32 fields, 5-second idle timeout and absolute header deadline, and 32 concurrent requests.
-- The live operator uses `http_v166666666633112345675678512344565673` with `runtime_v1664`. Checkpoint persistence, metrics, RBAC, readiness policy, and NVIDIA read-only behavior are preserved.
+- The live operator uses `http_v166666666633112345675678512344565674` with `runtime_v1664`. Checkpoint persistence, metrics, RBAC, readiness policy, and NVIDIA read-only behavior are preserved.
 
 ## Ingress resource model
 
@@ -24,7 +24,7 @@
 5. `max_request_header_bytes` — default 32768 bytes.
 6. `max_request_header_fields` — default 32 fields.
 
-Protocol invariants remain fail-closed in the inherited order: request framing and target syntax; header grammar and value-octet containment; `Expect`; upgrade/Trailer/TE/Proxy-Connection; canonical Connection parsing/lifecycle/critical nomination/duplication/singleton enforcement; Keep-Alive/HTTP2-Settings/WebSocket/Proxy-Authorization; Authorization/Cookie/Forwarded and forwarding/client-IP nomination containment; Envoy external/original/internal/attempt/decorator/timeout metadata; `X-Envoy-Retry-On`; `X-Envoy-Retry-Grpc-On`; `X-Envoy-Max-Retries`; `X-Envoy-Hedge-On-Per-Try-Timeout`; `X-Envoy-Retriable-Header-Names`; `X-Envoy-Retriable-Status-Codes`; `X-Envoy-Upstream-Alt-Stat-Name`; `X-Envoy-Upstream-Rq-Timeout-Alt-Response`; `X-Envoy-Is-Timeout-Retry`; `X-Envoy-Original-Host`; `X-Envoy-Upstream-Stream-Duration-Ms`; `X-Envoy-Downstream-Service-Cluster`; `X-Envoy-Downstream-Service-Node`; `X-Envoy-Force-Trace`; `X-Envoy-IP-Tags`; `X-Forwarded-Client-Cert`; `X-Request-ID`; `X-Client-Trace-ID`; `X-OT-Span-Context`; `X-B3-TraceId`; `X-B3-SpanId`; `X-B3-ParentSpanId`; `X-B3-Sampled`; `X-B3-Flags`; `B3`; `X-Datadog-Trace-ID`; `X-Datadog-Parent-ID`; `X-Datadog-Sampling-Priority`; `SW8`; `X-Amzn-Trace-Id`; `Traceparent`; `Tracestate`; `X-Envoy-Local-Overloaded`; `Referer`; `User-Agent`; `X-Envoy-Original-Method`; `X-Envoy-Peer-Metadata`; `X-Envoy-Peer-Metadata-ID`; `X-Envoy-Auth-Partial-Body`; `X-Envoy-OAuth-Status`; `X-Envoy-OAuth-Failure-Reason`; `Grpc-Timeout`; `Grpc-Previous-Rpc-Attempts`; `Grpc-Encoding`; `Grpc-Accept-Encoding`; `Grpc-Message-Type`; `Content-Type`; `Grpc-Status`; `Grpc-Message`; `Grpc-Status-Details-Bin`; `Grpc-Retry-Pushback-Ms`; `Grpc-Trace-Bin`; then `Grpc-Tags-Bin`.
+Protocol invariants remain fail-closed in the inherited order: request framing and target syntax; header grammar and value-octet containment; `Expect`; upgrade/Trailer/TE/Proxy-Connection; canonical Connection parsing/lifecycle/critical nomination/duplication/singleton enforcement; Keep-Alive/HTTP2-Settings/WebSocket/Proxy-Authorization; Authorization/Cookie/Forwarded and forwarding/client-IP nomination containment; Envoy external/original/internal/attempt/decorator/timeout metadata; `X-Envoy-Retry-On`; `X-Envoy-Retry-Grpc-On`; `X-Envoy-Max-Retries`; `X-Envoy-Hedge-On-Per-Try-Timeout`; `X-Envoy-Retriable-Header-Names`; `X-Envoy-Retriable-Status-Codes`; `X-Envoy-Upstream-Alt-Stat-Name`; `X-Envoy-Upstream-Rq-Timeout-Alt-Response`; `X-Envoy-Is-Timeout-Retry`; `X-Envoy-Original-Host`; `X-Envoy-Upstream-Stream-Duration-Ms`; `X-Envoy-Downstream-Service-Cluster`; `X-Envoy-Downstream-Service-Node`; `X-Envoy-Force-Trace`; `X-Envoy-IP-Tags`; `X-Forwarded-Client-Cert`; `X-Request-ID`; `X-Client-Trace-ID`; `X-OT-Span-Context`; `X-B3-TraceId`; `X-B3-SpanId`; `X-B3-ParentSpanId`; `X-B3-Sampled`; `X-B3-Flags`; `B3`; `X-Datadog-Trace-ID`; `X-Datadog-Parent-ID`; `X-Datadog-Sampling-Priority`; `SW8`; `X-Amzn-Trace-Id`; `Traceparent`; `Tracestate`; `X-Envoy-Local-Overloaded`; `Referer`; `User-Agent`; `X-Envoy-Original-Method`; `X-Envoy-Peer-Metadata`; `X-Envoy-Peer-Metadata-ID`; `X-Envoy-Auth-Partial-Body`; `X-Envoy-OAuth-Status`; `X-Envoy-OAuth-Failure-Reason`; `Grpc-Timeout`; `Grpc-Previous-Rpc-Attempts`; `Grpc-Encoding`; `Grpc-Accept-Encoding`; `Grpc-Message-Type`; `Content-Type`; `Grpc-Status`; `Grpc-Message`; `Grpc-Status-Details-Bin`; `Grpc-Retry-Pushback-Ms`; `Grpc-Trace-Bin`; `Grpc-Tags-Bin`; then `Baggage`.
 
 ## Safety invariants
 
@@ -138,11 +138,12 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 108. Exact `grpc-retry-pushback-ms` nomination is rejected; ordinary `Grpc-Retry-Pushback-Ms` remains admissible when otherwise valid.
 109. Exact `grpc-trace-bin` nomination is rejected; ordinary `Grpc-Trace-Bin` remains admissible when otherwise valid.
 110. Exact `grpc-tags-bin` nomination is rejected; ordinary `Grpc-Tags-Bin` remains admissible when otherwise valid.
-111. HEAD rejection remains bodyless while preserving representation `Content-Length`.
-112. Rejected requests cannot process trailing pipelined bytes on the same connection.
-113. Rejection releases bounded worker capacity.
-114. Header field-count, aggregate header bytes, and request-line byte budgets remain independently enforced.
-115. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
-116. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
-117. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-118. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.3.
+111. Exact `baggage` nomination is rejected; ordinary `Baggage` remains admissible when otherwise valid.
+112. HEAD rejection remains bodyless while preserving representation `Content-Length`.
+113. Rejected requests cannot process trailing pipelined bytes on the same connection.
+114. Rejection releases bounded worker capacity.
+115. Header field-count, aggregate header bytes, and request-line byte budgets remain independently enforced.
+116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
+117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
+118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4.
