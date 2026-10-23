@@ -147,6 +147,125 @@ class ReproducibleReleaseTests(unittest.TestCase):
             release.build(self.VERSION, self.out)
         self.assertFalse((self.root / "src/SHA256SUMS").exists())
 
+    def test_output_symlinks_are_rejected_without_modifying_other_files(self):
+        names = (f"nvlx-{self.VERSION}.tar.gz", "SHA256SUMS")
+        for name in names:
+            for dangling in (False, True):
+                with self.subTest(name=name, dangling=dangling):
+                    case = f"{names.index(name)}-{int(dangling)}"
+                    out = self.out / case
+                    out.mkdir(parents=True)
+                    external = self.base / f"external-{case}"
+                    if not dangling:
+                        external.write_bytes(b"private data")
+                    destination = out / name
+                    destination.symlink_to(external)
+                    other = out / names[1 - names.index(name)]
+                    other.write_bytes(b"previous artifact")
+                    with self.assertRaisesRegex(release.ReleaseError, "regular file"):
+                        release.build(self.VERSION, out)
+                    self.assertTrue(destination.is_symlink())
+                    self.assertEqual(other.read_bytes(), b"previous artifact")
+                    self.assertEqual(external.exists(), not dangling)
+                    if not dangling:
+                        self.assertEqual(external.read_bytes(), b"private data")
+
+    def test_directory_destinations_preserve_existing_artifacts(self):
+        self.out.mkdir()
+        names = (f"nvlx-{self.VERSION}.tar.gz", "SHA256SUMS")
+        for name in names:
+            with self.subTest(name=name):
+                destination = self.out / name
+                destination.mkdir()
+                other = self.out / names[1 - names.index(name)]
+                other.write_bytes(b"previous artifact")
+                with self.assertRaisesRegex(release.ReleaseError, "regular file"):
+                    release.build(self.VERSION, self.out)
+                self.assertEqual(other.read_bytes(), b"previous artifact")
+                self.assertTrue(destination.is_dir())
+                destination.rmdir()
+                other.unlink()
+
+    @unittest.skipUnless(hasattr(os, "mkfifo"), "requires named pipes")
+    def test_fifo_destinations_are_rejected_without_opening_them(self):
+        self.out.mkdir()
+        for name in (f"nvlx-{self.VERSION}.tar.gz", "SHA256SUMS"):
+            with self.subTest(name=name):
+                destination = self.out / name
+                os.mkfifo(destination)
+                with self.assertRaisesRegex(release.ReleaseError, "regular file"):
+                    release.build(self.VERSION, self.out)
+                self.assertEqual(list(self.out.iterdir()), [destination])
+                destination.unlink()
+
+    def test_hardlinked_destinations_do_not_modify_external_files(self):
+        self.out.mkdir()
+        external = self.base / "external"
+        external.write_bytes(b"private data")
+        for name in (f"nvlx-{self.VERSION}.tar.gz", "SHA256SUMS"):
+            os.link(external, self.out / name)
+        archive, manifest = release.build(self.VERSION, self.out)
+        self.assertEqual(external.read_bytes(), b"private data")
+        self.assertFalse(archive.samefile(external))
+        self.assertFalse(manifest.samefile(external))
+        self.assertEqual(
+            manifest.read_text(),
+            f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n",
+        )
+
+    def test_staging_failure_preserves_both_existing_artifacts(self):
+        archive, manifest = release.build(self.VERSION, self.out)
+        previous = (archive.read_bytes(), manifest.read_bytes())
+        self.write("README.md", "new release content\n")
+        write_bytes = Path.write_bytes
+
+        def fail_manifest(path, data):
+            if path.name == "SHA256SUMS":
+                raise OSError("simulated full disk")
+            return write_bytes(path, data)
+
+        with patch.object(Path, "write_bytes", fail_manifest):
+            with self.assertRaisesRegex(OSError, "simulated full disk"):
+                release.build(self.VERSION, self.out)
+        self.assertEqual((archive.read_bytes(), manifest.read_bytes()), previous)
+        self.assertEqual(set(self.out.iterdir()), {archive, manifest})
+
+    def test_staging_failure_leaves_no_partial_new_artifacts(self):
+        write_bytes = Path.write_bytes
+
+        def fail_manifest(path, data):
+            if path.name == "SHA256SUMS":
+                raise OSError("simulated full disk")
+            return write_bytes(path, data)
+
+        with patch.object(Path, "write_bytes", fail_manifest):
+            with self.assertRaisesRegex(OSError, "simulated full disk"):
+                release.build(self.VERSION, self.out)
+        self.assertEqual(list(self.out.iterdir()), [])
+
+    def test_existing_regular_files_can_be_rebuilt(self):
+        archive, manifest = release.build(self.VERSION, self.out)
+        previous = archive.read_bytes()
+        self.write("README.md", "new release content\n")
+        rebuilt = release.build(self.VERSION, self.out)
+        self.assertEqual(rebuilt, (archive, manifest))
+        self.assertNotEqual(archive.read_bytes(), previous)
+        self.assertEqual(
+            manifest.read_text(),
+            f"{hashlib.sha256(archive.read_bytes()).hexdigest()}  {archive.name}\n",
+        )
+        self.assertEqual(set(self.out.iterdir()), {archive, manifest})
+
+    def test_replacement_failure_cleans_staged_files(self):
+        archive, manifest = release.build(self.VERSION, self.out)
+        previous = (archive.read_bytes(), manifest.read_bytes())
+        self.write("README.md", "new release content\n")
+        with patch.object(Path, "replace", side_effect=OSError("simulated permission error")):
+            with self.assertRaisesRegex(OSError, "simulated permission error"):
+                release.build(self.VERSION, self.out)
+        self.assertEqual((archive.read_bytes(), manifest.read_bytes()), previous)
+        self.assertEqual(set(self.out.iterdir()), {archive, manifest})
+
     def test_cli_reports_invalid_versions_without_a_traceback(self):
         error = io.StringIO()
         with contextlib.redirect_stderr(error), self.assertRaises(SystemExit) as result:
