@@ -14,6 +14,37 @@ from pathlib import Path, PurePosixPath
 API = "https://api.github.com/repos/{repo}"
 RAW = "https://raw.githubusercontent.com/{repo}/{ref}/{path}"
 OBJECT_SHA = re.compile(r"[0-9a-f]{40}\Z")
+REPOSITORY = re.compile(r"[A-Za-z0-9][A-Za-z0-9-]*/[A-Za-z0-9_.-]+\Z")
+
+
+def _config_object(pairs):
+    """Reject duplicate JSON keys instead of silently replacing reviewed values."""
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise ValueError(f"duplicate security configuration key: {key}")
+        result[key] = value
+    return result
+
+
+def _read_config(path: Path) -> tuple[str, str, tuple[str, ...]]:
+    """Validate the scan scope before resolving or fetching upstream content."""
+    config = json.loads(path.read_text(encoding="utf-8"), object_pairs_hook=_config_object)
+    if type(config) is not dict:
+        raise ValueError("security configuration must be a JSON object")
+    repo = config.get("repository")
+    if (type(repo) is not str or not REPOSITORY.fullmatch(repo)
+            or repo.split("/")[1] in {".", ".."}):
+        raise ValueError("repository must be a GitHub owner/name without URL or path syntax")
+    baseline = config.get("baseline_commit")
+    if type(baseline) is not str or not OBJECT_SHA.fullmatch(baseline):
+        raise ValueError("baseline_commit must be a full lowercase 40-character commit SHA")
+    terms = config.get("relevant_terms")
+    if (type(terms) is not list or not terms
+            or any(type(term) is not str or not term or term.strip() != term
+                   or not term.isprintable() for term in terms)):
+        raise ValueError("relevant_terms must be a non-empty array of unpadded, printable strings")
+    return repo, baseline, tuple(terms)
 
 
 def _json(url: str):
@@ -175,19 +206,12 @@ def _inspection_text(
 
 
 def check(config_path: Path) -> dict[str, object]:
-    config = json.loads(config_path.read_text(encoding="utf-8"))
-    repo = config["repository"]
-    baseline = config["baseline_commit"]
-    terms = tuple(config["relevant_terms"])
-    if type(repo) is not str or not repo:
-        raise ValueError("repository must be a non-empty string")
-    if type(baseline) is not str or not baseline:
-        raise ValueError("baseline_commit must be a non-empty string")
-    if not terms or any(type(term) is not str or not term for term in terms):
-        raise ValueError("relevant_terms must contain non-empty strings")
-
+    repo, baseline, terms = _read_config(config_path)
     branch = _json(API.format(repo=repo) + "/branches/main")
-    head = branch["commit"]["sha"]
+    commit = branch.get("commit") if type(branch) is dict else None
+    head = commit.get("sha") if type(commit) is dict else None
+    if type(head) is not str or not OBJECT_SHA.fullmatch(head):
+        raise ValueError("NVIDIA branch did not include a valid commit SHA")
     if head == baseline:
         return {
             "passed": True,
