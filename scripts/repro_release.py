@@ -8,9 +8,11 @@ import gzip
 import hashlib
 import io
 import re
+import stat
 import tarfile
 import tomllib
 from pathlib import Path
+from tempfile import TemporaryDirectory
 
 ROOT = Path(__file__).resolve().parents[1]
 INCLUDE = (
@@ -80,6 +82,17 @@ def files():
                 raise ReleaseError(f"release source must be a regular file: {relative}")
 
 
+def _validate_output_files(*paths: Path) -> None:
+    """Never open an existing link, directory, or special file for output."""
+    for path in paths:
+        try:
+            mode = path.lstat().st_mode
+        except FileNotFoundError:
+            continue
+        if not stat.S_ISREG(mode):
+            raise ReleaseError(f"release destination must be a regular file: {path.name}")
+
+
 def build(version: str, out: Path) -> tuple[Path, Path]:
     validate_version(version)
     source_files = tuple(files())
@@ -111,8 +124,17 @@ def build(version: str, out: Path) -> tuple[Path, Path]:
     out.mkdir(parents=True, exist_ok=True)
     archive = out / f"nvlx-{version}.tar.gz"
     manifest = out / "SHA256SUMS"
-    archive.write_bytes(data)
-    manifest.write_text(f"{digest}  {archive.name}\n", encoding="utf-8")
+    _validate_output_files(archive, manifest)
+    # Stage both files on the destination filesystem before replacing either.
+    # Each replacement is atomic; the two-file pair is not a transaction.
+    with TemporaryDirectory(prefix=".nvlx-release-", dir=out) as temporary:
+        staged_archive = Path(temporary) / archive.name
+        staged_manifest = Path(temporary) / manifest.name
+        staged_archive.write_bytes(data)
+        staged_manifest.write_bytes(f"{digest}  {archive.name}\n".encode("utf-8"))
+        _validate_output_files(archive, manifest)
+        staged_archive.replace(archive)
+        staged_manifest.replace(manifest)
     return archive, manifest
 
 

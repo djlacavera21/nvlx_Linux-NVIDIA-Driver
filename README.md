@@ -1,6 +1,6 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7 completes security bulletin comparisons that reach GitHub's 300-file comparison limit. It retains the release integrity checks and all existing HTTP containment work.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8 protects release output from symlink and special-file destinations and stages complete artifacts before replacing existing files. Security bulletin coverage and existing HTTP containment remain in place.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
@@ -22,14 +22,16 @@ The [2026-10-23 review](docs/security-reviews/2026-10-23-nvidia-comparison-cover
 - The requested archive version must exactly match both `pyproject.toml` and `nvlx.__version__`. Versions use canonical dot-separated integers. Invalid or mismatched inputs fail before output is created.
 - Source archives omit Python bytecode, `__pycache__`, generated `*.egg-info` metadata, and `.DS_Store`. Installing the package locally does not add that generated metadata to a release.
 - Included source files and directories must not be symlinks. Output directories must sit outside the included source paths so a build cannot include its own previous output.
+- Existing archive and checksum destinations must be regular files; symlinks, directories, and special files are rejected before either artifact is replaced. Rebuilding a hard-linked destination replaces its directory entry without changing the linked file.
+- Both artifacts are written to a temporary directory on the output filesystem before installation. Staging failures preserve existing artifacts, and temporary files are cleaned up. Each replacement is atomic, but the archive and checksum are separate replacements: publish only after the build succeeds and the checksum verifies.
 - File ownership, timestamps, and permission modes are normalized. Executable files retain executable permissions; other files use mode `0644`.
 - Manual release workflow runs use the checked-out package version. Tag builds require an exact `v<package-version>` tag before building or publishing.
 
 Build and compare two source archives:
 
 ```bash
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7 --out dist/one
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7 --out dist/two
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8 --out dist/one
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8 --out dist/two
 cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
 ```
 
@@ -174,4 +176,4 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
 117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
 118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.
