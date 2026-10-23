@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import difflib
 import json
+import re
 import urllib.parse
 import urllib.request
 from pathlib import Path, PurePosixPath
@@ -12,6 +13,7 @@ from pathlib import Path, PurePosixPath
 
 API = "https://api.github.com/repos/{repo}"
 RAW = "https://raw.githubusercontent.com/{repo}/{ref}/{path}"
+OBJECT_SHA = re.compile(r"[0-9a-f]{40}\Z")
 
 
 def _json(url: str):
@@ -68,6 +70,66 @@ def _content_changes(before: str, after: str) -> str:
         if line.startswith(("+ ", "- ")):
             changed.append(line[2:])
     return "\n".join(changed)
+
+
+def _tree_files(repo: str, commit: str) -> dict[str, tuple[str, str]]:
+    """Read a complete file inventory for one immutable commit, failing closed."""
+    api = API.format(repo=repo)
+    metadata = _json(api + "/git/commits/" + urllib.parse.quote(commit, safe=""))
+    if type(metadata) is not dict or metadata.get("sha") != commit:
+        raise ValueError("NVIDIA tree lookup returned a different commit")
+    tree = metadata.get("tree")
+    sha = tree.get("sha") if type(tree) is dict else None
+    if type(sha) is not str or not OBJECT_SHA.fullmatch(sha):
+        raise ValueError("NVIDIA commit did not include a valid tree SHA")
+
+    response = _json(api + f"/git/trees/{sha}?recursive=1")
+    if type(response) is not dict or response.get("truncated") is not False:
+        raise RuntimeError("NVIDIA recursive tree is incomplete; review cannot proceed")
+    if response.get("sha") != sha or type(response.get("tree")) is not list:
+        raise ValueError("NVIDIA tree lookup returned an invalid tree")
+
+    files = {}
+    seen = set()
+    for entry in response["tree"]:
+        if type(entry) is not dict:
+            raise ValueError("NVIDIA tree returned an invalid entry")
+        path = entry.get("path")
+        if (type(path) is not str or not path or "\\" in path
+                or any(part in {"", ".", ".."} for part in path.split("/"))):
+            raise ValueError("NVIDIA tree returned a non-canonical path")
+        if path in seen:
+            raise ValueError("NVIDIA tree returned a duplicate path")
+        seen.add(path)
+        object_sha = entry.get("sha")
+        if type(object_sha) is not str or not OBJECT_SHA.fullmatch(object_sha):
+            raise ValueError("NVIDIA tree returned an invalid object SHA")
+        kind, mode = entry.get("type"), entry.get("mode")
+        if kind == "tree" and mode == "040000":
+            continue
+        if kind != "blob" or mode not in {"100644", "100755", "120000"}:
+            raise ValueError("NVIDIA tree contains an unsupported entry type or mode")
+        if mode == "120000" and path.endswith(".md"):
+            raise ValueError("NVIDIA tree contains a Markdown symlink; review cannot proceed")
+        files[path] = (object_sha, mode)
+    return files
+
+
+def _tree_comparison_files(repo: str, baseline: str, head: str) -> list[dict[str, str]]:
+    """Enumerate every changed file when GitHub's comparison list reaches its cap.
+
+    Renames become a removal plus an addition so both versions receive review.
+    No API patches are reused; aggregate deltas are reconstructed from full text.
+    """
+    before = _tree_files(repo, baseline)
+    after = _tree_files(repo, head)
+    changes = []
+    for path in sorted(before.keys() | after.keys()):
+        if before.get(path) == after.get(path):
+            continue
+        status = "added" if path not in before else "removed" if path not in after else "modified"
+        changes.append({"filename": path, "status": status})
+    return changes
 
 
 def _inspection_text(
@@ -132,6 +194,9 @@ def check(config_path: Path) -> dict[str, object]:
             "baseline": baseline,
             "head": head,
             "relevant_changes": [],
+            "comparison_source": "baseline",
+            "changed_files": 0,
+            "inspected_markdown_files": 0,
         }
 
     comparison = _json(API.format(repo=repo) + f"/compare/{baseline}...{head}")
@@ -143,23 +208,27 @@ def check(config_path: Path) -> dict[str, object]:
     files = comparison.get("files")
     if type(files) is not list:
         raise ValueError("NVIDIA comparison did not include a file list")
+    comparison_source = "compare"
     if len(files) >= 300:
-        raise RuntimeError("NVIDIA comparison reached the 300-file review limit")
+        files = _tree_comparison_files(repo, baseline, head)
+        comparison_source = "recursive-trees"
 
     hits = []
+    inspected_markdown_files = 0
     for change in files:
         if type(change) is not dict:
             raise ValueError("NVIDIA comparison returned an invalid file entry")
-        path = change.get("filename", "")
+        path = change.get("filename")
+        if type(path) is not str or not path:
+            raise ValueError("NVIDIA comparison returned a file without a valid path")
         previous_path = change.get("previous_filename", "")
+        if "previous_filename" in change and (type(previous_path) is not str or not previous_path):
+            raise ValueError("NVIDIA comparison returned an invalid previous path")
         if not (
-            type(path) is str
-            and (
-                path.endswith(".md")
-                or (type(previous_path) is str and previous_path.endswith(".md"))
-            )
+            path.endswith(".md") or previous_path.endswith(".md")
         ):
             continue
+        inspected_markdown_files += 1
         text, source_url = _inspection_text(change, repo, baseline, head)
         folded = text.casefold()
         matched = [term for term in terms if term.casefold() in folded]
@@ -178,6 +247,9 @@ def check(config_path: Path) -> dict[str, object]:
         "baseline": baseline,
         "head": head,
         "relevant_changes": hits,
+        "comparison_source": comparison_source,
+        "changed_files": len(files),
+        "inspected_markdown_files": inspected_markdown_files,
     }
 
 

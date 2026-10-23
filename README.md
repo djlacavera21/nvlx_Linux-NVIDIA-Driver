@@ -1,9 +1,21 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6 validates release versions and source archives before publication. It includes all later changes from the previous `.7.5` release family, including `Baggage` Connection-nomination containment.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7 completes security bulletin comparisons that reach GitHub's 300-file comparison limit. It retains the release integrity checks and all existing HTTP containment work.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
+
+## Security bulletin coverage
+
+`python scripts/check_nvidia_security.py` retains the reviewed baseline and checks whether upstream security material names managed NVIDIA components. When the comparison API returns 300 files, the scanner reads complete recursive trees for the pinned baseline and head commits and reconstructs the full changed-file list.
+
+- Missing, truncated, malformed, or inconsistent tree responses stop the scan. File-fetch errors and non-ancestral baselines continue to fail closed.
+- Every changed Markdown file is inspected, including removals. Renames are reviewed as a removal and an addition; unchanged files are excluded.
+- Dedicated bulletins retain full before-and-after context. Aggregate indexes use reconstructed changed lines so historical product references do not create unrelated alerts.
+- JSON results include `comparison_source`, `changed_files`, and `inspected_markdown_files` to show the scan's coverage.
+- Exit status `0` means no relevant changes were found. Status `2` means relevant material needs review or verification could not finish. The scanner does not advance the baseline automatically.
+
+The [2026-10-23 review](docs/security-reviews/2026-10-23-nvidia-comparison-coverage.md) records the complete 400-file delta and the GPU Display Driver bulletin assessment. The default R610 pin already matches that bulletin's fixed release; the reviewed security snapshot is acknowledged in `config/security-baseline.json`.
 
 ## Release integrity
 
@@ -16,8 +28,8 @@
 Build and compare two source archives:
 
 ```bash
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6 --out dist/one
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6 --out dist/two
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7 --out dist/one
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7 --out dist/two
 cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
 ```
 
@@ -162,4 +174,4 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
 117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
 118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7.
