@@ -197,9 +197,11 @@ class NvidiaSecurityGateTests(unittest.TestCase):
                 ),
             }
         ]
-        result, fetch = self.run_check(files)
+        result, fetch = self.run_check(
+            files, texts=["| old | NVIDIA DCGM |", "| old | NVIDIA DCGM |\n| new | Megatron Bridge |"],
+        )
         self.assertTrue(result["passed"])
-        fetch.assert_not_called()
+        self.assertEqual(fetch.call_count, 2)
 
     def test_relevant_changed_index_line_fails(self):
         files = [
@@ -209,7 +211,7 @@ class NvidiaSecurityGateTests(unittest.TestCase):
                 "patch": "@@ -1 +1 @@\n-| old |\n+| CVE | GPU Operator |",
             }
         ]
-        result, _ = self.run_check(files)
+        result, _ = self.run_check(files, texts=["| old |", "| CVE | GPU Operator |"])
         self.assertFalse(result["passed"])
         self.assertEqual(result["relevant_changes"][0]["terms"], ["GPU Operator"])
 
@@ -247,6 +249,91 @@ class NvidiaSecurityGateTests(unittest.TestCase):
         )
         self.assertFalse(result["passed"])
         self.assertEqual(fetch.call_count, 2)
+
+    def test_incomplete_aggregate_patch_cannot_hide_relevant_changes(self):
+        files = [{
+            "filename": "2026/README.md", "status": "modified",
+            "patch": "@@ -1 +1,3 @@\n old entry\n+unrelated entry",
+        }]
+        result, fetch = self.run_check(
+            files, texts=["old entry", "old entry\nunrelated entry\nGPU Operator"],
+        )
+        self.assertFalse(result["passed"])
+        self.assertEqual(result["relevant_changes"][0]["terms"], ["GPU Operator"])
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_empty_or_malformed_aggregate_patch_still_requires_full_contents(self):
+        for snippet in ("", "@@ -1 +1 @@", "not a patch"):
+            with self.subTest(patch=snippet):
+                files = [{"filename": "2026/README.md", "status": "modified", "patch": snippet}]
+                result, fetch = self.run_check(files, texts=["old entry", "DCGM update"])
+                self.assertFalse(result["passed"])
+                self.assertEqual(fetch.call_count, 2)
+
+    def test_marker_like_content_lines_are_inspected_on_addition_and_removal(self):
+        for before, after, snippet in (
+            ("", "++DCGM", "@@ -0,0 +1 @@\n+++DCGM"),
+            ("--GPU Operator", "", "@@ -1 +0,0 @@\n---GPU Operator"),
+        ):
+            with self.subTest(before=before, after=after):
+                files = [{"filename": "2026/README.md", "status": "modified", "patch": snippet}]
+                result, fetch = self.run_check(files, texts=[before, after])
+                self.assertFalse(result["passed"])
+                self.assertEqual(fetch.call_count, 2)
+
+    def test_patch_only_references_do_not_override_actual_aggregate_delta(self):
+        files = [{
+            "filename": "2026/README.md", "status": "modified",
+            "patch": "@@ -1 +1 @@\n+GPU Operator",
+        }]
+        result, fetch = self.run_check(
+            files, texts=["historical GPU Operator", "historical GPU Operator\nnew unrelated entry"],
+        )
+        self.assertTrue(result["passed"])
+        self.assertEqual(result["relevant_changes"], [])
+        self.assertEqual(fetch.call_count, 2)
+
+    def test_aggregate_contents_are_fetched_at_pinned_commits_with_quoted_paths(self):
+        files = [{"filename": "2026/Release Notes.md", "status": "modified", "patch": ""}]
+        result, fetch = self.run_check(files, texts=["old entry", "DCGM update"])
+        self.assertFalse(result["passed"])
+        self.assertEqual([call.args[0] for call in fetch.call_args_list], [
+            f"https://raw.githubusercontent.com/NVIDIA/product-security/{self.BASE}/2026/Release%20Notes.md",
+            f"https://raw.githubusercontent.com/NVIDIA/product-security/{self.HEAD}/2026/Release%20Notes.md",
+        ])
+        self.assertEqual(result["relevant_changes"][0]["raw_url"], fetch.call_args.args[0])
+
+    def test_aggregate_fetch_failures_fail_closed_even_when_patch_is_available(self):
+        files = [{
+            "filename": "2026/README.md", "status": "modified",
+            "patch": "@@ -1 +1 @@\n-old entry\n+unrelated entry",
+        }]
+        for texts in (
+            [OSError("baseline unavailable")],
+            ["old entry", OSError("head unavailable")],
+        ):
+            with self.subTest(texts=texts):
+                with self.assertRaisesRegex(OSError, "unavailable"):
+                    self.run_check(files, texts=texts)
+
+    def test_renamed_aggregate_uses_both_paths_even_when_extension_changes(self):
+        for previous, current in (
+            ("2026/old.md", "2026/new.md"),
+            ("2026/old.md", "2026/new.txt"),
+            ("2026/old.txt", "2026/new.md"),
+        ):
+            with self.subTest(previous=previous, current=current):
+                files = [{
+                    "filename": current, "previous_filename": previous,
+                    "status": "renamed", "patch": "",
+                }]
+                result, fetch = self.run_check(files, texts=["DCGM entry", "unrelated entry"])
+                self.assertFalse(result["passed"])
+                self.assertEqual([call.args[0] for call in fetch.call_args_list], [
+                    f"https://raw.githubusercontent.com/NVIDIA/product-security/{self.BASE}/{previous}",
+                    f"https://raw.githubusercontent.com/NVIDIA/product-security/{self.HEAD}/{current}",
+                ])
+                self.assertEqual(result["inspected_markdown_files"], 1)
 
     def test_non_ancestral_baseline_fails_closed(self):
         def fake_json(url):
