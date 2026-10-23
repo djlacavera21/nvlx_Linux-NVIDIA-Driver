@@ -1,0 +1,85 @@
+name: Publish nvlx 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3
+
+on:
+  push:
+    branches: ["release/v1666666666331123456783"]
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+env:
+  RELEASE_COMMIT: "533751ac15a8ef6e8cafc2913021f52590f823fc"
+  RELEASE_VERSION: "1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "533751ac15a8ef6e8cafc2913021f52590f823fc"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test release and security validation
+        run: |
+          python -m unittest discover -s tests -p 'test_repro_release.py' -v
+          python -m unittest discover -s tests -p 'test_security_gate.py' -v
+          PYTHONPATH=src python -m unittest discover -s tests -p 'test_dcgm_security_gate.py' -v
+      - name: Verify reviewed security snapshot
+        run: python scripts/check_nvidia_security.py
+      - name: Build and verify deterministic source archives
+        run: |
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/one
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/two
+          cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
+          cmp "dist/one/nvlx-$RELEASE_VERSION.tar.gz" "dist/two/nvlx-$RELEASE_VERSION.tar.gz"
+          printf '%s  %s\n' 'defa85e6703ec75ff1ab8ad166349ac525b1fa7f3f79edb1cd22c304e471b831' "dist/one/nvlx-$RELEASE_VERSION.tar.gz" | sha256sum --check -
+          mkdir -p dist/release
+          cp dist/one/* dist/release/
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/release/nvlx.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release/*.tar.gz
+      - name: Attest SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/release/*.tar.gz
+          sbom-path: dist/release/nvlx.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvlx-reproducible-release
+          path: dist/release/
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/nvlx-release-notes.md <<'NOTES'
+          Block malformed DCGM Exporter version inputs in the fleet security gate.
+
+          - Require exact canonical ASCII MAJOR.MINOR.PATCH releases for the observed exporter version and minimum fixed version.
+          - Reject arbitrary numeric text, annotated output, prefixes, whitespace, prerelease/build suffixes, and combined container image tags.
+          - Compare all three version components numerically and return blocked findings for invalid or unknown versions and invalid thresholds.
+          - Keep --fail-open limited to bulletin availability; invalid or vulnerable versions still block.
+          - Add 14 regression tests covering the API, CLI, and source-availability policy, and clarify CLI help and documentation.
+
+          Compatibility: supply the canonical exporter release component, such as 4.8.3. Combined DCGM/exporter image tags and noncanonical version strings must be corrected before the gate can pass.
+
+          Validation: 2,167 tests passed. Hosted CI passed on Python 3.11, 3.12, and 3.13; both current NVIDIA security checks passed. Live CLI checks confirmed malformed input blocks with `--fail-open`, and valid releases follow the configured source-availability policy. Source archives were byte-identical and built a wheel with matching version metadata. Assets include the source archive, checksum manifest, and SPDX SBOM, with build and SBOM attestations.
+
+          PR: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/pull/60
+          CI: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39968923374
+          Security: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39968923441
+          NOTES
+          gh release create "v$RELEASE_VERSION" dist/release/* --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --title "nvlx $RELEASE_VERSION" --notes-file /tmp/nvlx-release-notes.md --latest
