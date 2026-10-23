@@ -1,0 +1,84 @@
+name: Publish nvlx 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2
+
+on:
+  push:
+    branches: ["release/v1666666666331123456782"]
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+env:
+  RELEASE_COMMIT: "c470a6d73286903192bbe5f0ae16c08e713a025a"
+  RELEASE_VERSION: "1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "c470a6d73286903192bbe5f0ae16c08e713a025a"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test release and security validation
+        run: |
+          python -m unittest discover -s tests -p 'test_repro_release.py' -v
+          python -m unittest discover -s tests -p 'test_security_gate.py' -v
+      - name: Verify reviewed security snapshot
+        run: python scripts/check_nvidia_security.py
+      - name: Build and verify deterministic source archives
+        run: |
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/one
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/two
+          cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
+          cmp "dist/one/nvlx-$RELEASE_VERSION.tar.gz" "dist/two/nvlx-$RELEASE_VERSION.tar.gz"
+          printf '%s  %s\n' 'abba3ea324a377aaad0db21826c298fcdd445affab0bc339742f45233afdb747' "dist/one/nvlx-$RELEASE_VERSION.tar.gz" | sha256sum --check -
+          mkdir -p dist/release
+          cp dist/one/* dist/release/
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/release/nvlx.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release/*.tar.gz
+      - name: Attest SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/release/*.tar.gz
+          sbom-path: dist/release/nvlx.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvlx-reproducible-release
+          path: dist/release/
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/nvlx-release-notes.md <<'NOTES'
+          Inspect aggregate security-index changes from complete pinned contents.
+
+          - Reconstruct added and removed index lines from full baseline and head content instead of trusting GitHub patch snippets.
+          - Prevent empty, incomplete, or malformed snippets from hiding relevant changes, including content resembling diff file markers.
+          - Preserve unchanged-history filtering and use both paths for renames, including Markdown extension changes.
+          - Fail closed if either required content fetch fails.
+          - Add seven regression tests and remove the obsolete patch-snippet parser.
+
+          Each modified or renamed aggregate requires two raw-content requests. Verification stops if either source cannot be fetched.
+
+          Validation: 2,153 tests passed. Hosted CI passed on Python 3.11, 3.12, and 3.13; both current NVIDIA security checks passed. A live historical comparison inspected 175 changed files and 17 Markdown files and flagged only the previously reviewed GPU Display Driver bulletin, as expected. Source archives were byte-identical and built a wheel with matching version metadata. Assets include the source archive, checksum manifest, and SPDX SBOM, with build and SBOM attestations.
+
+          PR: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/pull/59
+          CI: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39965707205
+          Security: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39965708887
+          NOTES
+          gh release create "v$RELEASE_VERSION" dist/release/* --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --title "nvlx $RELEASE_VERSION" --notes-file /tmp/nvlx-release-notes.md --latest
