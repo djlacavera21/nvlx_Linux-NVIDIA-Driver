@@ -1,0 +1,81 @@
+name: Publish nvlx 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7
+
+on:
+  push:
+    branches: ["release/v166666666633112345677"]
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+env:
+  RELEASE_COMMIT: "ec1b6f814baef858aae9aba8f31e2680d1abb73f"
+  RELEASE_VERSION: "1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.7"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "ec1b6f814baef858aae9aba8f31e2680d1abb73f"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test release and security validation
+        run: |
+          python -m unittest discover -s tests -p 'test_repro_release.py' -v
+          python -m unittest discover -s tests -p 'test_security_gate.py' -v
+      - name: Verify reviewed security snapshot
+        run: python scripts/check_nvidia_security.py
+      - name: Build and verify deterministic source archives
+        run: |
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/one
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/two
+          cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
+          mkdir -p dist/release
+          cp dist/one/* dist/release/
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/release/nvlx.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release/*.tar.gz
+      - name: Attest SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/release/*.tar.gz
+          sbom-path: dist/release/nvlx.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvlx-reproducible-release
+          path: dist/release/
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/nvlx-release-notes.md <<'NOTES'
+          Complete security bulletin comparisons beyond GitHub's 300-file response cap.
+
+          - Enumerate full changes using validated recursive trees pinned to baseline and head commits.
+          - Preserve fail-closed behavior, full dedicated-bulletin context, and aggregate-index delta matching.
+          - Report changed-file and inspected-Markdown counts; review renames as removals and additions.
+          - Add 15 regression tests for coverage beyond the cap and malformed or incomplete responses.
+
+          The recorded live review covers 400 changed files and 34 Markdown files. Bulletin 5861 lists 610.57.04 as the fixed Linux R610 release, matching nvlx's existing pin. The reviewed upstream snapshot is acknowledged with a dated scope assessment. Custom configurations and installed fleet versions still need their own platform and branch assessment.
+
+          Validation: 2,126 tests passed. Hosted CI passed on Python 3.11, 3.12, and 3.13; both NVIDIA security checks passed. Source archives were byte-identical with matching SHA-256 manifests. Assets include the source archive, checksum manifest, and SPDX SBOM, with build and SBOM attestations.
+
+          PR: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/pull/56
+          CI: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39956924107
+          Security: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39956924106
+          NOTES
+          gh release create "v$RELEASE_VERSION" dist/release/* --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --title "nvlx $RELEASE_VERSION" --notes-file /tmp/nvlx-release-notes.md --latest
