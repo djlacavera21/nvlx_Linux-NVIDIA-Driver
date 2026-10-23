@@ -1,6 +1,6 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8 protects release output from symlink and special-file destinations and stages complete artifacts before replacing existing files. Security bulletin coverage and existing HTTP containment remain in place.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1 validates security scan configuration before contacting GitHub, preventing malformed product-term lists and ambiguous JSON from changing the scan scope. Release output protections and existing HTTP containment remain in place.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
@@ -9,6 +9,8 @@
 
 `python scripts/check_nvidia_security.py` retains the reviewed baseline and checks whether upstream security material names managed NVIDIA components. When the comparison API returns 300 files, the scanner reads complete recursive trees for the pinned baseline and head commits and reconstructs the full changed-file list.
 
+- Configuration must be a JSON object with unique keys, a GitHub `owner/name` repository, a full lowercase 40-character baseline commit SHA, and a non-empty `relevant_terms` array. Terms must be printable, non-empty strings without leading or trailing whitespace; internal spaces and case-insensitive matching are supported. Invalid configuration stops the scan before network access.
+- The upstream branch response must provide a full lowercase commit SHA before it can satisfy the baseline or participate in a comparison. Existing reviewed configuration values remain unchanged.
 - Missing, truncated, malformed, or inconsistent tree responses stop the scan. File-fetch errors and non-ancestral baselines continue to fail closed.
 - Every changed Markdown file is inspected, including removals. Renames are reviewed as a removal and an addition; unchanged files are excluded.
 - Dedicated bulletins retain full before-and-after context. Aggregate indexes use reconstructed changed lines so historical product references do not create unrelated alerts.
@@ -30,8 +32,8 @@ The [2026-10-23 review](docs/security-reviews/2026-10-23-nvidia-comparison-cover
 Build and compare two source archives:
 
 ```bash
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8 --out dist/one
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8 --out dist/two
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1 --out dist/one
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1 --out dist/two
 cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
 ```
 
@@ -176,4 +178,4 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
 117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
 118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1.

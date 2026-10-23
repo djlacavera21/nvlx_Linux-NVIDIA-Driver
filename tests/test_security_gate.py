@@ -1,3 +1,5 @@
+import contextlib
+import io
 import json
 import tempfile
 import unittest
@@ -8,24 +10,20 @@ from scripts import check_nvidia_security as gate
 
 
 class NvidiaSecurityGateTests(unittest.TestCase):
-    def config(self, directory: str, *, baseline: str = "base") -> Path:
+    BASE = "b" * 40
+    HEAD = "c" * 40
+
+    def config(self, directory: str, *, baseline: str = BASE) -> Path:
         path = Path(directory) / "security-baseline.json"
-        path.write_text(
-            json.dumps(
-                {
-                    "repository": "NVIDIA/product-security",
-                    "baseline_commit": baseline,
-                    "relevant_terms": ["GPU Operator", "DCGM"],
-                }
-            ),
-            encoding="utf-8",
-        )
+        value = self.valid_config()
+        value["baseline_commit"] = baseline
+        path.write_text(json.dumps(value), encoding="utf-8")
         return path
 
     def run_check(self, files, texts=()):
         def fake_json(url):
             if url.endswith("/branches/main"):
-                return {"commit": {"sha": "head"}}
+                return {"commit": {"sha": self.HEAD}}
             return {"status": "ahead", "files": files}
 
         with tempfile.TemporaryDirectory() as directory:
@@ -36,13 +34,156 @@ class NvidiaSecurityGateTests(unittest.TestCase):
 
     def test_matching_baseline_passes_without_comparison(self):
         with tempfile.TemporaryDirectory() as directory:
-            config = self.config(directory, baseline="same")
+            config = self.config(directory)
             with patch.object(
-                gate, "_json", return_value={"commit": {"sha": "same"}}
+                gate, "_json", return_value={"commit": {"sha": self.BASE}}
             ) as fetch:
                 result = gate.check(config)
         self.assertTrue(result["passed"])
         self.assertEqual(fetch.call_count, 1)
+
+    def valid_config(self):
+        return {
+            "repository": "NVIDIA/product-security",
+            "baseline_commit": self.BASE,
+            "relevant_terms": ["GPU Operator", "DCGM"],
+        }
+
+    def assert_config_rejected(self, value):
+        with tempfile.TemporaryDirectory() as directory:
+            config = Path(directory) / "security-baseline.json"
+            config.write_text(json.dumps(value), encoding="utf-8")
+            with (
+                patch.object(gate, "_json", return_value={"commit": {"sha": self.BASE}}) as fetch,
+                patch.object(gate, "_text") as text_fetch,
+            ):
+                with self.assertRaises(ValueError):
+                    gate.check(config)
+                fetch.assert_not_called()
+                text_fetch.assert_not_called()
+
+    def test_string_terms_are_rejected_before_network_access(self):
+        config = self.valid_config()
+        config["relevant_terms"] = "GPU Operator"
+        self.assert_config_rejected(config)
+
+    def test_object_terms_are_rejected_before_network_access(self):
+        config = self.valid_config()
+        config["relevant_terms"] = {"GPU Operator": "unexpected value"}
+        self.assert_config_rejected(config)
+
+    def test_empty_or_non_list_terms_are_rejected(self):
+        for terms in ([], {}, None, True, 0):
+            with self.subTest(terms=terms):
+                config = self.valid_config()
+                config["relevant_terms"] = terms
+                self.assert_config_rejected(config)
+
+    def test_blank_padded_control_or_non_string_terms_are_rejected(self):
+        for term in (
+            "", " ", "\t", " DCGM", "DCGM ", "GPU\nOperator", "DCGM\x00", "DCGM\x7f",
+            None, False, 42, [], {},
+        ):
+            with self.subTest(term=term):
+                config = self.valid_config()
+                config["relevant_terms"] = ["GPU Operator", term]
+                self.assert_config_rejected(config)
+
+    def test_repository_requires_a_single_owner_and_name(self):
+        for repo in (
+            None, False, 42, "", "NVIDIA", "NVIDIA/", "/product-security",
+            "NVIDIA/product-security/extra", "NVIDIA/..", "../product-security", "NVIDIA/.",
+            "https://github.com/NVIDIA/product-security", "NVIDIA/product-security?ref=main",
+            "NVIDIA/product-security#fragment", "NVIDIA/product%2fsecurity",
+            "NVIDIA\\product-security", " NVIDIA/product-security", "NVIDIA/product-security\n",
+        ):
+            with self.subTest(repo=repo):
+                config = self.valid_config()
+                config["repository"] = repo
+                self.assert_config_rejected(config)
+
+    def test_baseline_requires_a_full_canonical_commit_sha(self):
+        for baseline in (
+            None, False, 42, "", "main", "a" * 39, "a" * 41, "A" * 40,
+            "g" * 40, " " * 40, self.BASE + "\n", "../" + self.BASE,
+        ):
+            with self.subTest(baseline=baseline):
+                config = self.valid_config()
+                config["baseline_commit"] = baseline
+                self.assert_config_rejected(config)
+
+    def test_missing_required_config_fields_are_rejected(self):
+        for field in self.valid_config():
+            with self.subTest(field=field):
+                config = self.valid_config()
+                del config[field]
+                self.assert_config_rejected(config)
+
+    def test_non_object_config_is_rejected(self):
+        for config in (None, [], "configuration", 42, True):
+            with self.subTest(config=config):
+                self.assert_config_rejected(config)
+
+    def test_duplicate_config_keys_are_rejected_before_network_access(self):
+        for field, value in self.valid_config().items():
+            with self.subTest(field=field), tempfile.TemporaryDirectory() as directory:
+                config = Path(directory) / "security-baseline.json"
+                original = json.dumps(self.valid_config())
+                duplicate = original[:-1] + f", {json.dumps(field)}: {json.dumps(value)}}}"
+                config.write_text(duplicate, encoding="utf-8")
+                with patch.object(gate, "_json") as fetch:
+                    with self.assertRaisesRegex(ValueError, "duplicate"):
+                        gate.check(config)
+                    fetch.assert_not_called()
+
+    def test_upstream_head_must_be_a_full_canonical_commit_sha(self):
+        branches = [None, [], {}, {"commit": None}, {"commit": []}]
+        branches += [
+            {"commit": {"sha": sha}}
+            for sha in (None, False, 42, "", "main", "c" * 39, "C" * 40, self.HEAD + "\n")
+        ]
+        for branch in branches:
+            with self.subTest(branch=branch), tempfile.TemporaryDirectory() as directory:
+                with (
+                    patch.object(gate, "_json", return_value=branch) as fetch,
+                    patch.object(gate, "_text") as text_fetch,
+                ):
+                    with self.assertRaisesRegex(ValueError, "commit SHA"):
+                        gate.check(self.config(directory))
+                    self.assertEqual(fetch.call_count, 1)
+                    text_fetch.assert_not_called()
+
+    def test_cli_reports_config_errors_as_failed_json_without_network_access(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.config(directory)
+            invalid = self.valid_config()
+            invalid["relevant_terms"] = "DCGM"
+            config.write_text(json.dumps(invalid), encoding="utf-8")
+            output = io.StringIO()
+            with patch.object(gate, "_json") as fetch, contextlib.redirect_stdout(output):
+                result = gate.main(["--config", str(config)])
+            fetch.assert_not_called()
+        self.assertEqual(result, 2)
+        payload = json.loads(output.getvalue())
+        self.assertIs(payload["passed"], False)
+        self.assertIn("relevant_terms", payload["error"])
+        self.assertNotIn("Traceback", output.getvalue())
+
+    def test_valid_custom_repository_and_review_metadata_are_preserved(self):
+        with tempfile.TemporaryDirectory() as directory:
+            config = self.config(directory)
+            value = self.valid_config()
+            value["repository"] = "example-owner/security.bulletins_2026"
+            value["review"] = {"date": "2026-10-23"}
+            config.write_text(json.dumps(value), encoding="utf-8")
+            with patch.object(
+                gate, "_json", return_value={"commit": {"sha": self.BASE}}
+            ) as fetch:
+                result = gate.check(config)
+        self.assertTrue(result["passed"])
+        fetch.assert_called_once_with(
+            "https://api.github.com/repos/example-owner/security.bulletins_2026/branches/main"
+        )
 
     def test_unrelated_index_addition_ignores_relevant_context(self):
         files = [
@@ -110,7 +251,7 @@ class NvidiaSecurityGateTests(unittest.TestCase):
     def test_non_ancestral_baseline_fails_closed(self):
         def fake_json(url):
             if url.endswith("/branches/main"):
-                return {"commit": {"sha": "head"}}
+                return {"commit": {"sha": self.HEAD}}
             return {"status": "diverged", "files": []}
 
         with tempfile.TemporaryDirectory() as directory:
@@ -136,13 +277,13 @@ class NvidiaSecurityGateTests(unittest.TestCase):
     def run_tree_check(self, before, after, texts=(), *, overrides=None):
         api = gate.API.format(repo="NVIDIA/product-security")
         responses = {
-            "/branches/main": {"commit": {"sha": "head"}},
-            "/compare/base...head": {
+            "/branches/main": {"commit": {"sha": self.HEAD}},
+            f"/compare/{self.BASE}...{self.HEAD}": {
                 "status": "ahead",
                 "files": [{"filename": f"partial/{i}.json", "status": "added"} for i in range(300)],
             },
-            "/git/commits/base": {"sha": "base", "tree": {"sha": "1" * 40}},
-            "/git/commits/head": {"sha": "head", "tree": {"sha": "2" * 40}},
+            f"/git/commits/{self.BASE}": {"sha": self.BASE, "tree": {"sha": "1" * 40}},
+            f"/git/commits/{self.HEAD}": {"sha": self.HEAD, "tree": {"sha": "2" * 40}},
             f"/git/trees/{'1' * 40}?recursive=1": {"sha": "1" * 40, "tree": before, "truncated": False},
             f"/git/trees/{'2' * 40}?recursive=1": {"sha": "2" * 40, "tree": after, "truncated": False},
         }
@@ -184,7 +325,7 @@ class NvidiaSecurityGateTests(unittest.TestCase):
         result, _, fetch = self.run_tree_check([self.entry("2026/6000/6000.md")], [], ["DCGM"])
         self.assertFalse(result["passed"])
         self.assertEqual(result["relevant_changes"][0]["status"], "removed")
-        self.assertIn("/base/2026/6000/6000.md", fetch.call_args.args[0])
+        self.assertIn(f"/{self.BASE}/2026/6000/6000.md", fetch.call_args.args[0])
 
     def test_tree_fallback_keeps_full_dedicated_bulletin_context(self):
         before = [self.entry("2026/6000/6000.md")]
@@ -216,8 +357,8 @@ class NvidiaSecurityGateTests(unittest.TestCase):
         text_fetch.assert_not_called()
         urls = [call.args[0] for call in fetch.call_args_list]
         self.assertEqual(sum(url.endswith("/branches/main") for url in urls), 1)
-        self.assertTrue(any(url.endswith("/git/commits/base") for url in urls))
-        self.assertTrue(any(url.endswith("/git/commits/head") for url in urls))
+        self.assertTrue(any(url.endswith(f"/git/commits/{self.BASE}") for url in urls))
+        self.assertTrue(any(url.endswith(f"/git/commits/{self.HEAD}") for url in urls))
         self.assertFalse(any("/git/trees/main" in url for url in urls))
 
     def test_truncated_or_unconfirmed_trees_fail_closed(self):
@@ -238,10 +379,10 @@ class NvidiaSecurityGateTests(unittest.TestCase):
                     self.run_tree_check([], [], overrides={f"/git/trees/{'1' * 40}?recursive=1": response})
 
     def test_wrong_commit_or_missing_tree_sha_fails_closed(self):
-        for metadata in ({"sha": "other", "tree": {"sha": "1" * 40}}, {"sha": "base"}, {"sha": "base", "tree": {"sha": "bad"}}):
+        for metadata in ({"sha": "other", "tree": {"sha": "1" * 40}}, {"sha": self.BASE}, {"sha": self.BASE, "tree": {"sha": "bad"}}):
             with self.subTest(metadata=metadata):
                 with self.assertRaises(ValueError):
-                    self.run_tree_check([], [], overrides={"/git/commits/base": metadata})
+                    self.run_tree_check([], [], overrides={f"/git/commits/{self.BASE}": metadata})
 
     def test_invalid_tree_entries_fail_closed(self):
         for entries in (
@@ -266,7 +407,7 @@ class NvidiaSecurityGateTests(unittest.TestCase):
 
     def test_non_ancestral_capped_comparison_never_reaches_tree_fallback(self):
         with self.assertRaisesRegex(RuntimeError, "not an ancestor"):
-            self.run_tree_check([], [], overrides={"/compare/base...head": {"status": "diverged", "files": [{}] * 300}})
+            self.run_tree_check([], [], overrides={f"/compare/{self.BASE}...{self.HEAD}": {"status": "diverged", "files": [{}] * 300}})
 
     def test_fallback_text_failure_is_not_treated_as_a_clean_scan(self):
         with self.assertRaisesRegex(OSError, "text unavailable"):
