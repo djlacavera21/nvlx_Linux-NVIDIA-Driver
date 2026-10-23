@@ -1,6 +1,6 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2 reconstructs aggregate security-index changes from full pinned contents, preventing incomplete GitHub patch snippets from hiding relevant updates.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3 requires exact DCGM Exporter release versions so malformed input cannot pass the fleet security gate.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
@@ -20,6 +20,14 @@
 
 The [2026-10-23 review](docs/security-reviews/2026-10-23-nvidia-comparison-coverage.md) records the complete 400-file delta and the GPU Display Driver bulletin assessment. The default R610 pin already matches that bulletin's fixed release; the reviewed security snapshot is acknowledged in `config/security-baseline.json`.
 
+## DCGM Exporter version gate
+
+Use `nvlx-fleet security-gate --dcgm-exporter-version 4.8.3` with the exporter release version in exact `MAJOR.MINOR.PATCH` form. Components must be ASCII integers without leading zeros. The minimum fixed version follows the same format and defaults to `4.8.2`.
+
+- Missing or malformed versions and invalid minimum thresholds always produce a blocked finding. Arbitrary annotated text, prefixes, whitespace, prerelease/build suffixes, and combined container image tags are rejected.
+- Supply the exporter component identified as `EXPORTER_VERSION` in NVIDIA's [version definitions](https://github.com/NVIDIA/dcgm-exporter/blob/fafd151148052628061a80450b4ee037a5fa0c3c/hack/versions.env). Container tags combine DCGM and exporter versions and are not accepted as a single exporter version.
+- `--fail-open` relaxes bulletin-source availability checks only. Invalid or vulnerable versions still return failed JSON and exit status `2`.
+
 ## Release integrity
 
 - The requested archive version must exactly match both `pyproject.toml` and `nvlx.__version__`. Versions use canonical dot-separated integers. Invalid or mismatched inputs fail before output is created.
@@ -33,8 +41,8 @@ The [2026-10-23 review](docs/security-reviews/2026-10-23-nvidia-comparison-cover
 Build and compare two source archives:
 
 ```bash
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2 --out dist/one
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2 --out dist/two
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3 --out dist/one
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3 --out dist/two
 cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
 ```
 
@@ -179,4 +187,4 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
 117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
 118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.3.

@@ -60,7 +60,11 @@ def main(argv=None):
     q=s.add_parser("unquarantine"); q.add_argument("node"); q.add_argument("--yes",action="store_true")
     s.add_parser("alerts")
     q=s.add_parser("waves"); q.add_argument("nodes",nargs="+"); q.add_argument("--canaries",type=int,default=1); q.add_argument("--wave-size",type=int,default=5)
-    q=s.add_parser("security-gate"); q.add_argument("--dcgm-exporter-version"); q.add_argument("--fail-open",action="store_true")
+    q=s.add_parser("security-gate")
+    q.add_argument("--dcgm-exporter-version", metavar="MAJOR.MINOR.PATCH",
+                   help="DCGM Exporter release version, for example 4.8.3 (not a container image tag)")
+    q.add_argument("--fail-open", action="store_true",
+                   help="Allow unavailable bulletin sources; still enforce the version check")
     q=s.add_parser("advance-check"); q.add_argument("--qualified",action="store_true"); q.add_argument("--diagnostics-passed",action="store_true"); q.add_argument("--security-passed",action="store_true"); q.add_argument("--quarantined",type=int,default=0)
     a=p.parse_args(argv)
     if a.cmd=="qualify": rows=qualify_nodes(); _json([r.to_dict() for r in rows]); return 0 if rows and all(r.qualified for r in rows if r.gpu_present) else 2
