@@ -1,0 +1,77 @@
+name: Publish nvlx 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6
+
+on:
+  push:
+    branches: ["release/v166666666633112345676"]
+
+permissions:
+  contents: write
+  actions: read
+  id-token: write
+  attestations: write
+
+env:
+  RELEASE_COMMIT: "48702a28bc0079c324ae94d03a34fb2b076c178a"
+  RELEASE_VERSION: "1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6"
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: "48702a28bc0079c324ae94d03a34fb2b076c178a"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Test release validation
+        run: python -m unittest discover -s tests -p 'test_repro_release.py' -v
+      - name: Build and verify deterministic source archives
+        run: |
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/one
+          python scripts/repro_release.py "$RELEASE_VERSION" --out dist/two
+          cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
+          mkdir -p dist/release
+          cp dist/one/* dist/release/
+      - name: Generate SPDX SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: .
+          format: spdx-json
+          output-file: dist/release/nvlx.spdx.json
+          upload-artifact: false
+          upload-release-assets: false
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/release/*.tar.gz
+      - name: Attest SBOM
+        uses: actions/attest@v4
+        with:
+          subject-path: dist/release/*.tar.gz
+          sbom-path: dist/release/nvlx.spdx.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: nvlx-reproducible-release
+          path: dist/release/
+      - name: Publish versioned release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cat > /tmp/nvlx-release-notes.md <<'NOTES'
+          Release version validation and reproducible source archive safeguards.
+
+          - Require archive versions to match both package declarations.
+          - Reject invalid versions, symlinked source, and output inside included source paths.
+          - Exclude generated egg metadata and bytecode; normalize archive metadata.
+          - Correct manual release version selection and require exact release tags.
+          - Include all prior HTTP containment and operator changes.
+
+          Validation: 2,111 tests passed; hosted CI passed on Python 3.11, 3.12, and 3.13. Deterministic source archives, SHA-256 checksums, an SPDX SBOM, and build attestations are included.
+
+          Known limitation: the existing NVIDIA security bulletin scan stops at its 300-file comparison limit. That scan remains unresolved; the security baseline and limit were not changed.
+
+          PR: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/pull/55
+          CI: https://github.com/djlacavera21/nvlx_Linux-NVIDIA-Driver/actions/runs/39950976812
+          NOTES
+          gh release create "v$RELEASE_VERSION" dist/release/* --repo "$GITHUB_REPOSITORY" --target "$RELEASE_COMMIT" --title "nvlx $RELEASE_VERSION" --notes-file /tmp/nvlx-release-notes.md
