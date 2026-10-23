@@ -1,6 +1,6 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1 validates security scan configuration before contacting GitHub, preventing malformed product-term lists and ambiguous JSON from changing the scan scope. Release output protections and existing HTTP containment remain in place.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2 reconstructs aggregate security-index changes from full pinned contents, preventing incomplete GitHub patch snippets from hiding relevant updates.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
@@ -13,7 +13,8 @@
 - The upstream branch response must provide a full lowercase commit SHA before it can satisfy the baseline or participate in a comparison. Existing reviewed configuration values remain unchanged.
 - Missing, truncated, malformed, or inconsistent tree responses stop the scan. File-fetch errors and non-ancestral baselines continue to fail closed.
 - Every changed Markdown file is inspected, including removals. Renames are reviewed as a removal and an addition; unchanged files are excluded.
-- Dedicated bulletins retain full before-and-after context. Aggregate indexes use reconstructed changed lines so historical product references do not create unrelated alerts.
+- Dedicated bulletins retain full before-and-after context. Modified or renamed aggregate indexes always reconstruct added and removed lines from the full content at both pinned commits. API patch snippets are not used, so empty or incomplete patches cannot suppress changes. Unchanged historical references do not raise alerts.
+- Each modified or renamed aggregate requires two raw-content requests. If either fetch fails, verification stops with exit status `2`.
 - JSON results include `comparison_source`, `changed_files`, and `inspected_markdown_files` to show the scan's coverage.
 - Exit status `0` means no relevant changes were found. Status `2` means relevant material needs review or verification could not finish. The scanner does not advance the baseline automatically.
 
@@ -32,8 +33,8 @@ The [2026-10-23 review](docs/security-reviews/2026-10-23-nvidia-comparison-cover
 Build and compare two source archives:
 
 ```bash
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1 --out dist/one
-python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1 --out dist/two
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2 --out dist/one
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2 --out dist/two
 cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
 ```
 
@@ -178,4 +179,4 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
 117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
 118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.1.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.8.2.

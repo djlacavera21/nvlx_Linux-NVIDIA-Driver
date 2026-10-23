@@ -84,17 +84,6 @@ def _is_dedicated_bulletin(path: str) -> bool:
     )
 
 
-def _patch_changes(patch: str) -> str:
-    """Extract changed lines only, excluding unified-diff file markers and context."""
-    changed = []
-    for line in patch.splitlines():
-        if line.startswith(("+++", "---")):
-            continue
-        if line.startswith(("+", "-")):
-            changed.append(line[1:])
-    return "\n".join(changed)
-
-
 def _content_changes(before: str, after: str) -> str:
     changed = []
     for line in difflib.ndiff(before.splitlines(), after.splitlines()):
@@ -191,15 +180,11 @@ def _inspection_text(
         after = _text(head_url)
         return before + "\n" + after, head_url
 
-    # Aggregate indexes contain historical references to managed products.
-    # Searching their entire current contents turns every unrelated bulletin
-    # into a false positive, so inspect only added and removed lines.
-    patch = change.get("patch")
-    if type(patch) is str:
-        return _patch_changes(patch), head_url
-
-    # GitHub may omit a patch for a large text file. Reconstruct the delta;
-    # fetch failures intentionally propagate so the security gate fails closed.
+    # Always reconstruct aggregate deltas from both pinned contents. API patch
+    # snippets can be absent, empty, or incomplete, so they cannot prove that
+    # every relevant addition/removal was inspected. Matching only changed
+    # lines keeps unchanged historical product references from raising alerts.
+    # Fetch failures intentionally propagate so the gate fails closed.
     before = _text(baseline_url)
     after = _text(head_url)
     return _content_changes(before, after), head_url
