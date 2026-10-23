@@ -1,9 +1,25 @@
-# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4
+# nvlx: Linux-NVIDIA-Driver v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6
 
-`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4 adds `Baggage` Connection-nomination containment to the live HTTP surface after the inherited Grpc-Tags-Bin gate.
+`nvlx` v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6 validates release versions and source archives before publication. It includes all later changes from the previous `.7.5` release family, including `Baggage` Connection-nomination containment.
 
 > [!IMPORTANT]
 > NVIDIA driver/GPU Operator resources remain read-only. The operator still mutates only nvlx-owned GPUFleet status/finalizers plus its existing Lease and Events.
+
+## Release integrity
+
+- The requested archive version must exactly match both `pyproject.toml` and `nvlx.__version__`. Versions use canonical dot-separated integers. Invalid or mismatched inputs fail before output is created.
+- Source archives omit Python bytecode, `__pycache__`, generated `*.egg-info` metadata, and `.DS_Store`. Installing the package locally does not add that generated metadata to a release.
+- Included source files and directories must not be symlinks. Output directories must sit outside the included source paths so a build cannot include its own previous output.
+- File ownership, timestamps, and permission modes are normalized. Executable files retain executable permissions; other files use mode `0644`.
+- Manual release workflow runs use the checked-out package version. Tag builds require an exact `v<package-version>` tag before building or publishing.
+
+Build and compare two source archives:
+
+```bash
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6 --out dist/one
+python scripts/repro_release.py 1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6 --out dist/two
+cmp dist/one/SHA256SUMS dist/two/SHA256SUMS
+```
 
 ## v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4 Baggage Connection-nomination containment
 
@@ -146,4 +162,4 @@ Protocol invariants remain fail-closed in the inherited order: request framing a
 116. Silent and byte-trickle partial requests remain bounded by the inherited idle timeout and absolute parse deadline.
 117. Existing client-abort, parser-error, logging, response-body, resource, and method containment remains unchanged.
 118. All v1.6.5.x checkpoint receipt, reconciliation, and persistence semantics remain unchanged.
-119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.5.6.7.8.5.1.2.3.4.5.6.7.4.
+119. NVIDIA driver/GPU Operator resources remain read-only in v1.6.6.6.6.6.6.6.6.6.3.3.1.2.3.4.5.6.7.6.
